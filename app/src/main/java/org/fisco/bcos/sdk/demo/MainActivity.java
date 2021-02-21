@@ -1,31 +1,22 @@
 package org.fisco.bcos.sdk.demo;
 
 import android.os.Bundle;
-import android.os.Environment;
 import androidx.appcompat.app.AppCompatActivity;
-import java.math.BigInteger;
-import java.util.List;
-import org.apache.log4j.Level;
-import org.apache.log4j.Logger;
-import org.fisco.bcos.sdk.BcosSDKForProxy;
-import org.fisco.bcos.sdk.NetworkHandler.NetworkHandlerHttpsImp;
-import org.fisco.bcos.sdk.NetworkHandler.NetworkHandlerImp;
-import org.fisco.bcos.sdk.NetworkHandler.model.CertInfo;
+import org.fisco.bcos.sdk.BcosSDK;
 import org.fisco.bcos.sdk.client.Client;
-import org.fisco.bcos.sdk.client.exceptions.ClientException;
 import org.fisco.bcos.sdk.client.exceptions.NetworkHandlerException;
 import org.fisco.bcos.sdk.client.protocol.response.BcosTransaction;
 import org.fisco.bcos.sdk.client.protocol.response.BcosTransactionReceipt;
 import org.fisco.bcos.sdk.config.model.ProxyConfig;
-import org.fisco.bcos.sdk.contract.precompiled.consensus.ConsensusService;
-import org.fisco.bcos.sdk.contract.precompiled.sysconfig.SystemConfigService;
-import org.fisco.bcos.sdk.crypto.keypair.CryptoKeyPair;
 import org.fisco.bcos.sdk.demo.contract.HelloWorld;
-import org.fisco.bcos.sdk.log.BcosSDKLogUtil;
+import org.fisco.bcos.sdk.log.Logger;
+import org.fisco.bcos.sdk.log.LoggerFactory;
 import org.fisco.bcos.sdk.model.CryptoType;
 import org.fisco.bcos.sdk.model.NodeVersion;
 import org.fisco.bcos.sdk.model.TransactionReceipt;
-import org.fisco.bcos.sdk.transaction.model.exception.ContractException;
+import org.fisco.bcos.sdk.network.NetworkHandlerHttpsImp;
+import org.fisco.bcos.sdk.network.NetworkHandlerImp;
+import org.fisco.bcos.sdk.network.model.CertInfo;
 import org.fisco.bcos.sdk.transaction.tools.JsonUtils;
 
 public class MainActivity extends AppCompatActivity {
@@ -35,10 +26,7 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        // comment on the following line without using logs, only one line
-        BcosSDKLogUtil.configLog(Environment.getExternalStorageDirectory().getPath(), Level.TRACE);
-        // comment end
-        Logger logger = Logger.getLogger(MainActivity.class);
+        Logger logger = LoggerFactory.getLogger(MainActivity.class);
 
         new Thread(
                         new Runnable() {
@@ -51,7 +39,7 @@ public class MainActivity extends AppCompatActivity {
                 .start();
     }
 
-    private void httpRequest(Logger logger) {
+    private void httpRequest(org.fisco.bcos.sdk.log.Logger logger) {
         // config param, if you do not pass in the implementation of network access, use the default
         // class
         ProxyConfig proxyConfig = new ProxyConfig();
@@ -64,9 +52,8 @@ public class MainActivity extends AppCompatActivity {
         proxyConfig.setNetworkHandler(networkHandlerImp);
         // config param end
 
-        BcosSDKForProxy sdk = BcosSDKForProxy.build(proxyConfig);
+        BcosSDK sdk = BcosSDK.build(proxyConfig);
         deployAndSendContract(sdk, logger);
-        sendPrecompiled(sdk, logger);
         try {
             Thread.sleep(3000);
         } catch (Exception e) {
@@ -75,7 +62,7 @@ public class MainActivity extends AppCompatActivity {
         sdk.stopAll();
     }
 
-    private void httpsRequest(Logger logger) {
+    private void httpsRequest(org.fisco.bcos.sdk.log.Logger logger) {
         // config param, if you do not pass in the implementation of network access, use the default
         // class
         ProxyConfig proxyConfig = new ProxyConfig();
@@ -91,9 +78,8 @@ public class MainActivity extends AppCompatActivity {
         proxyConfig.setNetworkHandler(networkHandlerImp);
         // config param end
 
-        BcosSDKForProxy sdk = BcosSDKForProxy.build(proxyConfig);
+        BcosSDK sdk = BcosSDK.build(proxyConfig);
         deployAndSendContract(sdk, logger);
-        sendPrecompiled(sdk, logger);
         try {
             Thread.sleep(3000);
         } catch (Exception e) {
@@ -102,7 +88,7 @@ public class MainActivity extends AppCompatActivity {
         sdk.stopAll();
     }
 
-    private void deployAndSendContract(BcosSDKForProxy sdk, Logger logger) {
+    private void deployAndSendContract(BcosSDK sdk, org.fisco.bcos.sdk.log.Logger logger) {
         try {
             Client client = sdk.getClient(1);
             NodeVersion nodeVersion = client.getClientNodeVersion();
@@ -125,72 +111,12 @@ public class MainActivity extends AppCompatActivity {
                     client.getTransactionReceipt(ret1.getTransactionHash());
             logger.info("getTransactionReceipt, result: " + JsonUtils.toJson(receipt.getResult()));
 
-            sdk.stopAll();
+            client.stop();
         } catch (NetworkHandlerException e) {
             logger.error("NetworkHandlerException error info: " + e.getMessage());
         } catch (Exception e) {
             logger.error("error info: " + e.getMessage());
             e.printStackTrace();
-        }
-    }
-
-    private void sendPrecompiled(BcosSDKForProxy sdk, Logger logger) {
-        try {
-            Client client = sdk.getClient(Integer.valueOf(1));
-            CryptoKeyPair cryptoKeyPair = client.getCryptoSuite().createKeyPair();
-            ConsensusService consensusService = new ConsensusService(client, cryptoKeyPair);
-            // get the current sealerList and observerList
-            List<String> sealerList = client.getSealerList().getResult();
-            List<String> observerList = client.getObserverList().getResult();
-            logger.debug(
-                    "sealerList size: "
-                            + sealerList.size()
-                            + ", observerList size: "
-                            + observerList.size());
-
-            // select a node to operate
-            String selectedNode = sealerList.get(0);
-            logger.debug("selectedNode: " + selectedNode);
-
-            // add the sealer to the observerList
-            consensusService.addObserver(selectedNode);
-            sealerList = client.getSealerList().getResult();
-            observerList = client.getObserverList().getResult();
-            logger.debug(
-                    "updated 1, sealerList size: "
-                            + sealerList.size()
-                            + ", observerList size: "
-                            + observerList.size());
-            if (!observerList.contains(selectedNode) || sealerList.contains(selectedNode)) {
-                logger.error("add the node to the observerList failed");
-            }
-            // add the node to the sealerList
-            consensusService.addSealer(selectedNode);
-            sealerList = client.getSealerList().getResult();
-            observerList = client.getObserverList().getResult();
-            logger.debug(
-                    "updated 2, sealerList size: "
-                            + sealerList.size()
-                            + ", observerList size: "
-                            + observerList.size());
-            if (observerList.contains(selectedNode) || !sealerList.contains(selectedNode)) {
-                logger.error("add the node to the sealerList failed");
-            }
-
-            SystemConfigService systemConfigService =
-                    new SystemConfigService(client, cryptoKeyPair);
-            String key = "tx_count_limit";
-            BigInteger value = new BigInteger(client.getSystemConfigByKey(key).getSystemConfig());
-            BigInteger updatedValue = value.add(BigInteger.valueOf(1000));
-            String updatedValueStr = String.valueOf(updatedValue);
-            systemConfigService.setValueByKey(key, updatedValueStr);
-            BigInteger queriedValue =
-                    new BigInteger(client.getSystemConfigByKey(key).getSystemConfig());
-            if (!updatedValue.equals(queriedValue)) {
-                logger.error("update system config failed");
-            }
-        } catch (ClientException | ContractException e) {
-            logger.error("exception, error info:" + e.getMessage());
         }
     }
 }
