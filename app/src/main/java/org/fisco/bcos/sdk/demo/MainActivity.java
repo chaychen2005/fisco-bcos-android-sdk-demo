@@ -2,6 +2,11 @@ package org.fisco.bcos.sdk.demo;
 
 import android.os.Bundle;
 import androidx.appcompat.app.AppCompatActivity;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.util.ArrayList;
+import java.util.List;
+import org.apache.commons.lang3.tuple.Pair;
 import org.fisco.bcos.sdk.BcosSDK;
 import org.fisco.bcos.sdk.client.Client;
 import org.fisco.bcos.sdk.client.exceptions.NetworkHandlerException;
@@ -17,6 +22,10 @@ import org.fisco.bcos.sdk.model.TransactionReceipt;
 import org.fisco.bcos.sdk.network.NetworkHandlerHttpsImp;
 import org.fisco.bcos.sdk.network.NetworkHandlerImp;
 import org.fisco.bcos.sdk.network.model.CertInfo;
+import org.fisco.bcos.sdk.transaction.manager.TransactionProcessor;
+import org.fisco.bcos.sdk.transaction.manager.TransactionProcessorFactory;
+import org.fisco.bcos.sdk.transaction.model.dto.CallResponse;
+import org.fisco.bcos.sdk.transaction.model.dto.TransactionResponse;
 import org.fisco.bcos.sdk.transaction.tools.JsonUtils;
 
 public class MainActivity extends AppCompatActivity {
@@ -48,7 +57,7 @@ public class MainActivity extends AppCompatActivity {
         proxyConfig.setHexPrivateKey(
                 "65c70b77051903d7876c63256d9c165cd372ec7df813d0b45869c56fcf5fd564");
         NetworkHandlerImp networkHandlerImp = new NetworkHandlerImp();
-        networkHandlerImp.setIpAndPort("http://127.0.0.1:8170/");
+        networkHandlerImp.setIpAndPort("http://127.0.0.1:8181/");
         proxyConfig.setNetworkHandler(networkHandlerImp);
         // config param end
 
@@ -80,6 +89,7 @@ public class MainActivity extends AppCompatActivity {
 
         BcosSDK sdk = BcosSDK.build(proxyConfig);
         deployAndSendContract(sdk, logger);
+        callContract(sdk, logger);
         try {
             Thread.sleep(3000);
         } catch (Exception e) {
@@ -118,5 +128,71 @@ public class MainActivity extends AppCompatActivity {
             logger.error("error info: " + e.getMessage());
             e.printStackTrace();
         }
+    }
+
+    private void callContract(BcosSDK sdk, org.fisco.bcos.sdk.log.Logger logger) {
+        String contractName = "HelloWorld";
+        Pair<String, String> abiBinStr = getContractAbiBin(contractName);
+        String contractAbi = abiBinStr.getLeft();
+        String contractBin = abiBinStr.getRight();
+        logger.info("Contract abi: " + contractAbi + ", bin: " + contractBin);
+
+        try {
+            Client client = sdk.getClient(1);
+            TransactionProcessor manager =
+                    TransactionProcessorFactory.createTransactionProcessor(
+                            client,
+                            client.getCryptoSuite().getCryptoKeyPair(),
+                            contractName,
+                            contractAbi,
+                            contractBin);
+            TransactionResponse response = manager.deployAndGetResponse(new ArrayList<>());
+            if (!response.getTransactionReceipt().getStatus().equals("0x0")) {
+                return;
+            }
+            String contractAddress = response.getContractAddress();
+            logger.info("deploy contract , contract address: " + contractAddress);
+            List<Object> paramsSet = new ArrayList<>();
+            paramsSet.add("Hello, FISCO BCOS.");
+            TransactionResponse ret1 =
+                    manager.sendTransactionAndGetResponse(contractAddress, "set", paramsSet);
+            logger.info("send, receipt: " + JsonUtils.toJson(ret1));
+            List<Object> paramsGet = new ArrayList<>();
+            CallResponse ret2 =
+                    manager.sendCall(
+                            client.getCryptoSuite().getCryptoKeyPair().getAddress(),
+                            contractAddress,
+                            "get",
+                            paramsGet);
+            List<Object> ret3 = JsonUtils.fromJsonList(ret2.getValues(), Object.class);
+            logger.info("call to return object list, result: " + ret3);
+        } catch (NetworkHandlerException e) {
+            logger.error("NetworkHandlerException error info: " + e.getMessage());
+        } catch (Exception e) {
+            logger.error("error info: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    private Pair<String, String> getContractAbiBin(String contractName) {
+        String abi = getFromAssets(contractName + ".abi");
+        String bin = getFromAssets(contractName + ".bin");
+        return Pair.of(abi, bin);
+    }
+
+    private String getFromAssets(String fileName) {
+        try {
+            InputStreamReader inputReader =
+                    new InputStreamReader(getResources().getAssets().open(fileName));
+            BufferedReader bufReader = new BufferedReader(inputReader);
+            String line = "";
+            String Result = "";
+            while ((line = bufReader.readLine()) != null) Result += line;
+            return Result;
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        return null;
     }
 }
